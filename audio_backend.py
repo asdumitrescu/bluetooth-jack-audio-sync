@@ -34,6 +34,54 @@ def run_cmd(*args, capture: bool = False) -> str | bool:
         return "" if capture else False
 
 
+def _find_loopback_module_ids() -> set[int]:
+    output = run_cmd('pactl', 'list', 'modules', capture=True)
+    if not output:
+        return set()
+    ids: set[int] = set()
+    for match in re.finditer(r'Module #(\d+)\s+Name: module-loopback', output):
+        ids.add(int(match.group(1)))
+    return ids
+
+
+def _list_movable_sink_inputs() -> List[str]:
+    """List sink inputs excluding internal loopbacks to keep sync stable."""
+    output = run_cmd('pactl', 'list', 'sink-inputs', capture=True)
+    if not output:
+        return []
+    loopback_modules = _find_loopback_module_ids()
+    inputs: List[str] = []
+    for block in output.split('Sink Input #')[1:]:
+        lines = block.strip().splitlines()
+        if not lines:
+            continue
+        input_id = lines[0].strip()
+        owner_module = None
+        driver = None
+        app_name = None
+        media_name = None
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith('Owner Module:'):
+                owner_module = stripped.split(':', 1)[1].strip()
+            elif stripped.startswith('Driver:'):
+                driver = stripped.split(':', 1)[1].strip()
+            elif stripped.startswith('application.name ='):
+                app_name = stripped.split('=', 1)[1].strip().strip('"')
+            elif stripped.startswith('media.name ='):
+                media_name = stripped.split('=', 1)[1].strip().strip('"')
+        if owner_module and owner_module.isdigit() and int(owner_module) in loopback_modules:
+            continue
+        if driver and 'module-loopback' in driver:
+            continue
+        if app_name in ('module-loopback', 'module-ladspa-sink'):
+            continue
+        if media_name and 'Loopback' in media_name:
+            continue
+        inputs.append(input_id)
+    return inputs
+
+
 class AudioState:
     """Current state of the audio system."""
     
@@ -228,11 +276,8 @@ class AudioBackend:
             # EQ exists, set it as default and move streams
             run_cmd('pactl', 'set-default-sink', 'eq_sink')
             try:
-                output = run_cmd('pactl', 'list', 'sink-inputs', 'short', capture=True)
-                for line in output.strip().split('\n'):
-                    if line and 'module-loopback' not in line:
-                        input_id = line.split()[0]
-                        run_cmd('pactl', 'move-sink-input', input_id, 'eq_sink')
+                for input_id in _list_movable_sink_inputs():
+                    run_cmd('pactl', 'move-sink-input', input_id, 'eq_sink')
             except Exception:
                 pass
     
@@ -291,13 +336,10 @@ class AudioBackend:
         time.sleep(0.3)
     
     def move_streams_to_master(self):
-        """Move all audio streams to virtual master."""
+        """Move app audio streams to virtual master."""
         try:
-            output = run_cmd('pactl', 'list', 'sink-inputs', 'short', capture=True)
-            for line in output.strip().split('\n'):
-                if line:
-                    input_id = line.split()[0]
-                    run_cmd('pactl', 'move-sink-input', input_id, self.virtual_sink)
+            for input_id in _list_movable_sink_inputs():
+                run_cmd('pactl', 'move-sink-input', input_id, self.virtual_sink)
         except Exception:
             pass
 

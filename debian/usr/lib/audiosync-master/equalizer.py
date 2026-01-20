@@ -50,6 +50,54 @@ def run_cmd(*args, capture: bool = False) -> str | bool:
         return "" if capture else False
 
 
+def _find_loopback_module_ids() -> set[int]:
+    output = run_cmd('pactl', 'list', 'modules', capture=True)
+    if not output:
+        return set()
+    ids: set[int] = set()
+    for match in re.finditer(r'Module #(\d+)\s+Name: module-loopback', output):
+        ids.add(int(match.group(1)))
+    return ids
+
+
+def _list_movable_sink_inputs() -> List[str]:
+    """List sink inputs excluding internal loopbacks to keep sync stable."""
+    output = run_cmd('pactl', 'list', 'sink-inputs', capture=True)
+    if not output:
+        return []
+    loopback_modules = _find_loopback_module_ids()
+    inputs: List[str] = []
+    for block in output.split('Sink Input #')[1:]:
+        lines = block.strip().splitlines()
+        if not lines:
+            continue
+        input_id = lines[0].strip()
+        owner_module = None
+        driver = None
+        app_name = None
+        media_name = None
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith('Owner Module:'):
+                owner_module = stripped.split(':', 1)[1].strip()
+            elif stripped.startswith('Driver:'):
+                driver = stripped.split(':', 1)[1].strip()
+            elif stripped.startswith('application.name ='):
+                app_name = stripped.split('=', 1)[1].strip().strip('"')
+            elif stripped.startswith('media.name ='):
+                media_name = stripped.split('=', 1)[1].strip().strip('"')
+        if owner_module and owner_module.isdigit() and int(owner_module) in loopback_modules:
+            continue
+        if driver and 'module-loopback' in driver:
+            continue
+        if app_name in ('module-loopback', 'module-ladspa-sink'):
+            continue
+        if media_name and 'Loopback' in media_name:
+            continue
+        inputs.append(input_id)
+    return inputs
+
+
 class Equalizer:
     """
     10-band equalizer using PulseAudio module-ladspa-sink with mbeq plugin.
@@ -129,13 +177,10 @@ class Equalizer:
         return False
     
     def _move_streams_to_eq(self):
-        """Move all audio streams to EQ sink."""
+        """Move app audio streams to EQ sink."""
         try:
-            output = run_cmd('pactl', 'list', 'sink-inputs', 'short', capture=True)
-            for line in output.strip().split('\n'):
-                if line and 'module-loopback' not in line:
-                    input_id = line.split()[0]
-                    run_cmd('pactl', 'move-sink-input', input_id, self.sink_name)
+            for input_id in _list_movable_sink_inputs():
+                run_cmd('pactl', 'move-sink-input', input_id, self.sink_name)
         except Exception:
             pass
     
@@ -155,13 +200,10 @@ class Equalizer:
         return True
     
     def _move_streams_to_master(self):
-        """Move all audio streams back to master sink."""
+        """Move app audio streams back to master sink."""
         try:
-            output = run_cmd('pactl', 'list', 'sink-inputs', 'short', capture=True)
-            for line in output.strip().split('\n'):
-                if line and 'module-loopback' not in line:
-                    input_id = line.split()[0]
-                    run_cmd('pactl', 'move-sink-input', input_id, self.master_sink)
+            for input_id in _list_movable_sink_inputs():
+                run_cmd('pactl', 'move-sink-input', input_id, self.master_sink)
         except Exception:
             pass
     
@@ -199,7 +241,9 @@ class Equalizer:
     
     def _apply_bands(self) -> bool:
         """Apply current band values to the LADSPA sink."""
-        # Need to recreate the module with new control values
+        # Keep audio routed through the virtual master during reload.
+        self._move_streams_to_master()
+        run_cmd('pactl', 'set-default-sink', self.master_sink)
         module_id = self._find_eq_module()
         if module_id:
             run_cmd('pactl', 'unload-module', str(module_id))
@@ -215,7 +259,14 @@ class Equalizer:
             f'control={controls}'
         )
         
-        return bool(result)
+        if result:
+            self._module_id = self._find_eq_module()
+            # Restore routing through eq_sink after reload.
+            run_cmd('pactl', 'set-default-sink', self.sink_name)
+            self._move_streams_to_eq()
+            return True
+        
+        return False
     
     def apply_preset(self, preset_name: str) -> bool:
         """Apply an EQ preset."""
