@@ -136,7 +136,7 @@ Settings are saved to `~/.config/audiosync/settings.json`:
 
 ```bash
 # Clone the repository
-git clone https://github.com/YOUR_USERNAME/bluetooth-jack-audio-sync.git
+git clone https://github.com/asdumitrescu/bluetooth-jack-audio-sync.git
 cd bluetooth-jack-audio-sync
 
 # Build the .deb package
