@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Audio Sync Master
+Comment=Professional Audio Control for Linux
+Exec=audiosync-master
+Icon=audiosync-master
+Terminal=false
+Type=Application
+Categories=AudioVideo;Audio;AudioVideoEditing;
+Keywords=audio;sound;sync;delay;equalizer;
+StartupNotify=true

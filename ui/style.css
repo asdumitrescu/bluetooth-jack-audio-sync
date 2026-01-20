@@ -1,0 +1,348 @@
+/* Audio Sync Master - Dark Glassmorphism Theme */
+
+/* Main window */
+window {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f0f23 100%);
+}
+
+/* Header bar */
+headerbar {
+    background: rgba(26, 26, 46, 0.95);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+
+headerbar title {
+    color: #e8e8e8;
+    font-weight: 600;
+}
+
+/* Glass card effect */
+.glass-card {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    padding: 20px;
+    margin: 10px;
+}
+
+.glass-card-inner {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    padding: 16px;
+    margin: 8px 0;
+}
+
+/* Labels */
+.title-label {
+    font-size: 18px;
+    font-weight: 700;
+    color: #ffffff;
+    margin-bottom: 8px;
+}
+
+.subtitle-label {
+    font-size: 14px;
+    font-weight: 500;
+    color: #b8b8d1;
+}
+
+.value-label {
+    font-size: 28px;
+    font-weight: 700;
+    color: #00d4ff;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+.unit-label {
+    font-size: 14px;
+    color: #8888aa;
+    margin-left: 4px;
+}
+
+.status-label {
+    font-size: 12px;
+    color: #888899;
+}
+
+/* Status indicators */
+.status-connected {
+    color: #00ff88;
+}
+
+.status-disconnected {
+    color: #ff4466;
+}
+
+.status-active {
+    color: #00d4ff;
+}
+
+/* Sliders */
+scale {
+    min-height: 36px;
+}
+
+scale trough {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    min-height: 8px;
+}
+
+scale highlight {
+    background: linear-gradient(90deg, #00d4ff 0%, #0099ff 100%);
+    border-radius: 8px;
+    min-height: 8px;
+}
+
+scale slider {
+    background: linear-gradient(135deg, #ffffff 0%, #e0e0e0 100%);
+    border-radius: 50%;
+    min-width: 24px;
+    min-height: 24px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    transition: transform 0.15s ease;
+}
+
+scale slider:hover {
+    transform: scale(1.1);
+}
+
+/* Buttons */
+button {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    color: #ffffff;
+    padding: 8px 16px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+button:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.25);
+    box-shadow: 0 4px 12px rgba(0, 212, 255, 0.2);
+}
+
+button:active {
+    background: rgba(0, 212, 255, 0.3);
+}
+
+button.suggested-action {
+    background: linear-gradient(135deg, #00d4ff 0%, #0088cc 100%);
+    color: #ffffff;
+    border: none;
+}
+
+button.suggested-action:hover {
+    background: linear-gradient(135deg, #00e4ff 0%, #0099dd 100%);
+    box-shadow: 0 4px 16px rgba(0, 212, 255, 0.4);
+}
+
+button.destructive-action {
+    background: linear-gradient(135deg, #ff4466 0%, #cc2244 100%);
+    color: #ffffff;
+    border: none;
+}
+
+button.circular {
+    border-radius: 50%;
+    min-width: 40px;
+    min-height: 40px;
+    padding: 0;
+}
+
+/* Tab bar / Stack switcher */
+stackswitcher {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    padding: 4px;
+    margin: 8px;
+}
+
+stackswitcher button {
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 20px;
+    color: #8888aa;
+    min-width: 120px;
+}
+
+stackswitcher button:checked {
+    background: linear-gradient(135deg, #00d4ff 0%, #0088cc 100%);
+    color: #ffffff;
+    box-shadow: 0 4px 12px rgba(0, 212, 255, 0.3);
+}
+
+/* Spin button */
+spinbutton {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    color: #ffffff;
+    font-size: 16px;
+    font-weight: 600;
+    padding: 8px;
+}
+
+spinbutton text {
+    background: transparent;
+    color: #00d4ff;
+}
+
+spinbutton button {
+    background: rgba(0, 212, 255, 0.2);
+    border: none;
+    min-width: 32px;
+}
+
+spinbutton button:hover {
+    background: rgba(0, 212, 255, 0.4);
+}
+
+/* Dropdown / ComboBox */
+dropdown {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    padding: 8px 12px;
+    color: #ffffff;
+}
+
+dropdown:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+dropdown popover {
+    background: rgba(26, 26, 46, 0.98);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 12px;
+}
+
+/* Switch toggle */
+switch {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 16px;
+    min-width: 52px;
+    min-height: 28px;
+}
+
+switch:checked {
+    background: linear-gradient(90deg, #00d4ff 0%, #0088cc 100%);
+}
+
+switch slider {
+    background: #ffffff;
+    border-radius: 50%;
+    min-width: 22px;
+    min-height: 22px;
+    margin: 3px;
+}
+
+/* EQ Sliders - Vertical */
+.eq-slider {
+    min-width: 50px;
+}
+
+.eq-slider scale {
+    min-height: 180px;
+}
+
+.eq-slider scale trough {
+    min-width: 6px;
+}
+
+.eq-slider scale highlight {
+    min-width: 6px;
+}
+
+.eq-slider scale slider {
+    min-width: 20px;
+    min-height: 20px;
+}
+
+.eq-label {
+    font-size: 10px;
+    color: #8888aa;
+    font-weight: 500;
+}
+
+.eq-value {
+    font-size: 11px;
+    color: #00d4ff;
+    font-weight: 600;
+    font-family: 'JetBrains Mono', monospace;
+}
+
+/* Preset buttons */
+.preset-button {
+    padding: 6px 12px;
+    font-size: 12px;
+    border-radius: 6px;
+}
+
+.preset-button:checked {
+    background: linear-gradient(135deg, #00d4ff 0%, #0088cc 100%);
+    color: #ffffff;
+}
+
+/* Separator */
+separator {
+    background: rgba(255, 255, 255, 0.1);
+    min-height: 1px;
+    margin: 12px 0;
+}
+
+/* Scrolled window */
+scrolledwindow {
+    background: transparent;
+}
+
+scrolledwindow undershoot,
+scrolledwindow overshoot {
+    background: none;
+}
+
+/* Info bar */
+.info-row {
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 8px;
+    margin: 4px 0;
+}
+
+.info-icon {
+    font-size: 16px;
+    margin-right: 8px;
+}
+
+/* Animation keyframes */
+@keyframes pulse {
+    0% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.6;
+    }
+
+    100% {
+        opacity: 1;
+    }
+}
+
+.pulse {
+    animation: pulse 2s infinite;
+}
+
+/* Tooltips */
+tooltip {
+    background: rgba(26, 26, 46, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    color: #ffffff;
+}

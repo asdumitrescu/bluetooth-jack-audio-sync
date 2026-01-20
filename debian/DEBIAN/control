@@ -1,0 +1,18 @@
+Package: audiosync-master
+Version: 1.0.0
+Section: sound
+Priority: optional
+Architecture: all
+Depends: python3 (>= 3.10), python3-gi, gir1.2-gtk-4.0, gir1.2-adw-1, pulseaudio-utils
+Recommends: swh-plugins
+Maintainer: Andrei <andrei@localhost>
+Description: Professional Audio Sync and Equalizer for Linux
+ Audio Sync Master provides Bluetooth/analog audio synchronization
+ with adjustable delay and a professional 10-band parametric equalizer.
+ .
+ Features:
+  - Combine Bluetooth and Jack audio outputs
+  - Adjustable Jack delay (default 115ms)
+  - 10-band EQ with presets (Bass, Rock, etc.)
+  - Idempotent - safe to restart
+  - Modern dark GTK4 UI

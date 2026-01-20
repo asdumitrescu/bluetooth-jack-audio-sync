@@ -1,0 +1,13 @@
+#!/usr/bin/env python3
+"""Audio Sync Master - Professional Audio Control for Linux"""
+
+import sys
+from pathlib import Path
+
+# Add lib path
+sys.path.insert(0, '/usr/lib/audiosync-master')
+
+from main import main
+
+if __name__ == "__main__":
+    sys.exit(main())
