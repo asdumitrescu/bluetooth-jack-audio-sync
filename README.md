@@ -1,184 +1,64 @@
-# 🔊 Audio Sync Master
+# Audio Sync Master 🎧
 
-**Sync your Bluetooth speaker with analog jack output - play them as one unified speaker system!**
+**Professional Audio Synchronization & Equalization for Linux**
 
-A GTK4 Linux application for synchronizing JBL PartyBox Encore 2 (or any Bluetooth speaker) with your computer's analog jack output, with adjustable delay compensation and a professional 10-band parametric equalizer.
+Audio Sync Master is a powerful GTK4 application designed to solve the common problem of playing audio simultaneously through Bluetooth speakers and analog jack outputs (headphones/speakers) without synchronization issues.
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Platform](https://img.shields.io/badge/platform-Linux-green.svg)
-![Python](https://img.shields.io/badge/python-3.10+-yellow.svg)
+## ⚠️ Disclaimer: Experimental Software
 
----
+> [!IMPORTANT]  
+> **This software is provided "AS IS" and has NOT been extensively tested on all hardware configurations.**
+> 
+> It is an open-source project intended for users who are comfortable attempting to fix audio routing issues on their Linux systems. While designed to be safe (idempotent), experimental audio routing can sometimes require restarting PulseAudio or your computer if things get stuck.
+>
+> **Contributors are welcome!** If you encounter issues, please fork the repository, modify the code to fit your needs, and submit a Pull Request.
 
-## ✨ Features
+## Key Features
 
-- 🎧 **Audio Sync**: Combine Bluetooth and Jack audio outputs into one unified output
-- ⏱️ **Delay Compensation**: Adjustable Jack delay (0-300ms, default 115ms) to sync with Bluetooth latency
-- 🎛️ **10-Band Parametric EQ**: Professional equalizer with presets (Bass, Rock, Jazz, etc.)
-- 🔄 **Idempotent**: Safe to restart - won't break your existing audio setup
-- 🎨 **Modern Dark UI**: Beautiful glassmorphism GTK4 interface
-- 📦 **Easy Install**: `.deb` package included for one-click installation
+- **Universal Multi-Device Sync**: Automatically detects and synchronizes **ALL** connected Bluetooth speakers and Analog outputs simultaneously.
+- **Auto-Detection**: No manual configuration needed. The app scans for devices on startup and monitors for new connections in real-time (plug-and-play).
+- **Adjustable Delay**: Fine-tune the latency for your analog output to perfectly match your Bluetooth speakers' internal processing delay.
+- **10-Band Equalizer**: Built-in parametric equalizer with presets (Bass Boost, Rock, Electronic, etc.) to enhance your audio experience.
+- **Idempotent Design**: The backend is smart—it only creates loopbacks if they don't exist, preventing duplicate streams and weird echoes.
+- **Modern UI**: Sleek, glassmorphism-inspired GTK4 interface.
 
----
+## Installation
 
-## 🖥️ Screenshots
-
-The application features a sleek dark interface with two main tabs:
-
-- **Sync Tab**: Delay slider with ±3ms fine adjustment, real-time status display
-- **Equalizer Tab**: 10-band vertical sliders with preset buttons
-
----
-
-## 📦 Installation
-
-### Quick Install (Debian/Ubuntu)
+### Prerequisites
+- Python 3.10+
+- PulseAudio (pactl)
+- GTK4 & LibAdwaita
 
 ```bash
-# Download and install the .deb package
-sudo dpkg -i audiosync-master_1.0.0_all.deb
-
-# Install any missing dependencies
-sudo apt-get install -f
+sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 pulseaudio-utils
 ```
 
-### Dependencies
+### Running from Source
+Clone the repository and run the main script:
 
 ```bash
-sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 pulseaudio-utils swh-plugins
-```
-
----
-
-## 🚀 Usage
-
-### Launch from Terminal
-
-```bash
-audiosync-master
-```
-
-### Or find "Audio Sync Master" in your application menu
-
----
-
-## ⚙️ How It Works
-
-1. **Virtual Master Sink**: Creates a PulseAudio null sink (`audio_master`) as the default output
-2. **Loopbacks**: Routes audio from the master to both Jack and Bluetooth with configurable delays
-3. **Delay Compensation**: Jack output is delayed (default 115ms) to compensate for Bluetooth latency
-4. **EQ Processing**: Optional LADSPA-based equalizer applied before output splitting
-
-```
-┌─────────────┐     ┌──────────────┐     ┌─────────────┐
-│  Your App   │ ──► │ audio_master │ ──► │  Jack (115ms delay)
-└─────────────┘     │  (or eq_sink)│     └─────────────┘
-                    │              │     ┌─────────────┐
-                    │              │ ──► │  Bluetooth (1ms)
-                    └──────────────┘     └─────────────┘
-```
-
----
-
-## 🎛️ Equalizer Presets
-
-| Preset | Description |
-|--------|-------------|
-| Flat | No EQ (0dB all bands) |
-| Bass Boost | Enhanced low frequencies |
-| Treble | Enhanced high frequencies |
-| Vocal | Clarity for voice/speech |
-| Rock | Classic rock curve |
-| Electronic | Deep bass + crisp highs |
-| Jazz | Warm, balanced sound |
-| Classical | Natural acoustic sound |
-| Hip Hop | Heavy bass emphasis |
-| Loudness | Enhanced both ends |
-
----
-
-## 📁 Project Structure
-
-```
-audiosync-master/
-├── main.py              # Application entry point
-├── config.py            # Settings persistence (~/.config/audiosync/)
-├── audio_backend.py     # PulseAudio control (idempotent)
-├── equalizer.py         # LADSPA 10-band EQ
-├── ui/
-│   ├── main_window.py   # GTK4 main window
-│   ├── delay_panel.py   # Delay slider controls
-│   ├── equalizer_panel.py # EQ sliders + presets
-│   └── style.css        # Dark glassmorphism theme
-├── debian/              # Debian package files
-└── icons/               # Application icon (SVG)
-```
-
----
-
-## 🔧 Configuration
-
-Settings are saved to `~/.config/audiosync/settings.json`:
-
-```json
-{
-  "jack_delay_ms": 115,
-  "jack_sink": "alsa_output.pci-0000_00_1f.3.analog-stereo",
-  "bt_speaker_name": "JBL PartyBox Encore 2",
-  "eq_enabled": false,
-  "eq_bands": {"31": 0, "63": 0, ...}
-}
-```
-
----
-
-## 🛠️ Building from Source
-
-```bash
-# Clone the repository
 git clone https://github.com/asdumitrescu/bluetooth-jack-audio-sync.git
-cd bluetooth-jack-audio-sync
-
-# Build the .deb package
-./build-deb.sh
-
-# Install
-sudo dpkg -i audiosync-master_1.0.0_all.deb
+cd audiosync-master
+python3 debian/usr/lib/audiosync-master/main.py
 ```
 
----
+## Usage
 
-## 📋 Requirements
+1.  **Launch the App**: Open Audio Sync Master.
+2.  **Connect Devices**: Connect your Bluetooth speaker(s) or plug in your analog jack.
+3.  **Auto-Sync**: The app will display "New device detected, syncing..." and automatically route audio to the new device.
+4.  **Adjust Delay**: 
+    - Use the **Sync** tab to adjust the analog delay.
+    - Most Bluetooth speakers have a latency of 50-150ms. Use the slider to delay the analog output until it matches the Bluetooth audio perfectly.
+5.  **Equalizer**: Switch to the **Equalizer** tab to apply sound profiles.
 
-- **OS**: Linux (tested on Ubuntu 22.04+)
-- **Python**: 3.10+
-- **Audio**: PulseAudio
-- **Display**: X11 or Wayland (GTK4)
+## Project Structure
 
----
+- `audio_backend.py`: Core logic for PulseAudio interaction and device detection.
+- `main.py`: Application entry point.
+- `config.py`: Configuration management (stored in `~/.config/audiosync/`).
+- `ui/`: GTK4 user interface components.
 
-## 🤝 Contributing
+## License
 
-Contributions are welcome! Feel free to:
-
-- Report bugs
-- Suggest features
-- Submit pull requests
-
----
-
-## 📄 License
-
-MIT License - see [LICENSE](LICENSE) for details.
-
----
-
-## 🙏 Acknowledgments
-
-- Built with [GTK4](https://gtk.org/) and [libadwaita](https://gnome.pages.gitlab.gnome.org/libadwaita/)
-- EQ powered by [SWH LADSPA Plugins](http://plugin.org.uk/)
-- Inspired by the need to sync JBL PartyBox Encore 2 with desktop speakers
-
----
-
-**Made with ❤️ for the Linux audio community**
+This project is licensed under the **MIT License**. You are free to use, modify, distribute, and sell this software. See the [LICENSE](LICENSE) file for details.

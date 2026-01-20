@@ -135,7 +135,21 @@ class MainWindow(Adw.ApplicationWindow):
     def _initial_setup(self):
         """Perform initial audio setup (idempotent)."""
         GLib.idle_add(self._do_initial_setup)
+        # Start monitoring for changes (e.g. new devices)
+        GLib.timeout_add_seconds(5, self._check_status)
     
+    def _check_status(self):
+        """Periodically check if sync is needed."""
+        if not audio.is_setup_complete():
+            print("Detected change in audio devices, resyncing...")
+            self.status_label.set_text("New device detected, syncing...")
+            success, message = audio.setup_sync()
+            if success:
+                self.status_label.set_text(f"✓ {message}")
+            else:
+                self.status_label.set_text(f"⚠ {message}")
+        return True
+
     def _do_initial_setup(self):
         """Run initial setup in main thread."""
         self.status_label.set_text("Checking audio configuration...")
