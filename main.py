@@ -2,19 +2,22 @@
 """
 Audio Sync Master - Professional Audio Control for Linux
 
-A GTK4 application for managing Bluetooth/analog audio synchronization
-with an advanced 10-band parametric equalizer.
+A GTK4 application that automatically detects and synchronizes ALL
+audio output devices (analog cards + Bluetooth speakers) with
+per-device delay control and a 10-band parametric equalizer.
 
 Features:
-- Idempotent audio sync (won't break on restart)
-- Adjustable Jack audio delay (default 115ms)
+- Auto-detects ALL analog audio cards and Bluetooth speakers
+- Real-time device monitoring (plug-and-play)
+- Per-device adjustable delay for perfect sync
 - 10-band parametric EQ with presets
 - Dark glassmorphism UI
+- Works with PulseAudio and PipeWire
 
 Requirements:
 - Python 3.10+
 - GTK4 and libadwaita
-- PulseAudio
+- PulseAudio or PipeWire (with pactl)
 
 Install dependencies:
     sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 pulseaudio-utils
@@ -31,6 +34,7 @@ from gi.repository import Gtk, Adw, GLib, Gio
 import sys
 import os
 import signal
+import subprocess
 from pathlib import Path
 
 # Ensure we can import our modules
@@ -46,79 +50,97 @@ Adw.init()
 
 class AudioSyncApp(Adw.Application):
     """Main application class."""
-    
+
     def __init__(self):
         super().__init__(
             application_id="com.audiosync.master",
             flags=Gio.ApplicationFlags.FLAGS_NONE
         )
-        
+
         self.window = None
-        
+
         # Handle SIGINT gracefully
         GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGINT, self._on_sigint)
-    
+
     def do_activate(self):
         """Handle application activation."""
         if not self.window:
             self.window = MainWindow(self)
         self.window.present()
-    
+
     def do_startup(self):
         """Handle application startup."""
         Adw.Application.do_startup(self)
-        
+
         # Create app actions
         action = Gio.SimpleAction.new("quit", None)
         action.connect("activate", self._on_quit)
         self.add_action(action)
-        
+
         action = Gio.SimpleAction.new("about", None)
         action.connect("activate", self._on_about)
         self.add_action(action)
-        
+
         # Set keyboard shortcuts
         self.set_accels_for_action("app.quit", ["<Control>q"])
-    
+
+    def do_shutdown(self):
+        """Handle application shutdown."""
+        audio.stop_monitor()
+        Adw.Application.do_shutdown(self)
+
     def _on_quit(self, action, param):
         """Handle quit action."""
         self.quit()
-    
+
     def _on_sigint(self):
         """Handle Ctrl+C."""
         self.quit()
         return GLib.SOURCE_REMOVE
-    
+
     def _on_about(self, action, param):
         """Show about dialog."""
         about = Adw.AboutWindow(
             transient_for=self.window,
             application_name="Audio Sync Master",
             application_icon="audio-speakers",
-            version="1.0.0",
-            developer_name="Audio Sync Team",
-            copyright="© 2026",
-            comments="Professional audio synchronization and equalization for Linux",
-            website="https://github.com/audiosync/master",
+            version="2.0.0",
+            developer_name="Andrei Dumitrescu",
+            copyright="\u00a9 2026",
+            comments=(
+                "Automatically detect and sync ALL audio outputs.\n"
+                "Analog cards + Bluetooth speakers with per-device delay."
+            ),
             license_type=Gtk.License.MIT_X11
         )
         about.present()
 
 
+def _check_audio_server() -> bool:
+    """Check for PulseAudio or PipeWire with pactl support."""
+    try:
+        result = subprocess.run(['pactl', 'info'], capture_output=True, text=True, timeout=3)
+        if result.returncode == 0:
+            if 'PipeWire' in result.stdout:
+                print("Audio server: PipeWire")
+            else:
+                print("Audio server: PulseAudio")
+            return True
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    return False
+
+
 def main():
     """Application entry point."""
-    # Check for required dependencies
-    try:
-        import subprocess
-        result = subprocess.run(['pactl', '--version'], capture_output=True)
-        if result.returncode != 0:
-            print("Error: PulseAudio (pactl) not found. Please install pulseaudio-utils.")
-            sys.exit(1)
-    except FileNotFoundError:
-        print("Error: PulseAudio (pactl) not found. Please install pulseaudio-utils.")
+    if not _check_audio_server():
+        print("Error: No compatible audio server found.")
+        print("Please install PulseAudio or PipeWire:")
+        print("  sudo apt install pulseaudio-utils")
+        print("  # or for PipeWire:")
+        print("  sudo apt install pipewire pipewire-pulse")
         sys.exit(1)
-    
-    # Run the app
+
     app = AudioSyncApp()
     return app.run(sys.argv)
 

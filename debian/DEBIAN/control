@@ -1,18 +1,20 @@
 Package: audiosync-master
-Version: 1.0.0
+Version: 2.0.0
 Section: sound
 Priority: optional
 Architecture: all
 Depends: python3 (>= 3.10), python3-gi, gir1.2-gtk-4.0, gir1.2-adw-1, pulseaudio-utils
-Recommends: swh-plugins
-Maintainer: Andrei <andrei@localhost>
-Description: Professional Audio Sync and Equalizer for Linux
- Audio Sync Master provides Bluetooth/analog audio synchronization
- with adjustable delay and a professional 10-band parametric equalizer.
+Recommends: swh-plugins, pipewire-pulse
+Maintainer: Andrei Dumitrescu <andrei@localhost>
+Description: Universal Audio Sync for Linux - All Devices Automatic
+ Audio Sync Master automatically detects and synchronizes ALL audio
+ output devices on your Linux system. Works with PulseAudio and PipeWire.
  .
  Features:
-  - Combine Bluetooth and Jack audio outputs
-  - Adjustable Jack delay (default 115ms)
-  - 10-band EQ with presets (Bass, Rock, etc.)
-  - Idempotent - safe to restart
-  - Modern dark GTK4 UI
+  - Auto-detect ALL analog audio cards and Bluetooth speakers
+  - Real-time plug-and-play device monitoring
+  - Per-device adjustable delay for perfect sync
+  - 10-band parametric EQ with presets
+  - Idempotent and safe to restart
+  - Modern dark glassmorphism GTK4 UI
+  - Works with both PulseAudio and PipeWire

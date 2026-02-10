@@ -5,7 +5,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-VERSION="1.0.0"
+VERSION="2.0.0"
 PACKAGE_NAME="audiosync-master"
 BUILD_DIR="$SCRIPT_DIR/debian"
 LIB_DIR="$BUILD_DIR/usr/lib/$PACKAGE_NAME"
@@ -14,7 +14,10 @@ ICON_DIR="$BUILD_DIR/usr/share/icons/hicolor/scalable/apps"
 echo "🔧 Building $PACKAGE_NAME v$VERSION..."
 
 # Clean previous build
-rm -f "${PACKAGE_NAME}_${VERSION}_all.deb"
+rm -f "${PACKAGE_NAME}_"*"_all.deb"
+
+# Clean __pycache__ from build directory
+find "$BUILD_DIR" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 
 # Create directories
 mkdir -p "$LIB_DIR"
@@ -34,6 +37,9 @@ cp ui/main_window.py "$LIB_DIR/ui/"
 cp ui/delay_panel.py "$LIB_DIR/ui/"
 cp ui/equalizer_panel.py "$LIB_DIR/ui/"
 cp ui/style.css "$LIB_DIR/ui/"
+
+# Remove any __pycache__ that got copied
+find "$LIB_DIR" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 
 # Copy icon
 echo "🎨 Installing icon..."
