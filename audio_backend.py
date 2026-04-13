@@ -1,90 +1,26 @@
 #!/usr/bin/env python3
 """
-Audio Backend - Idempotent PulseAudio control for Audio Sync Master.
+Audio Backend - Idempotent PulseAudio/PipeWire control for Audio Sync Master.
 Manages virtual sinks, loopbacks, and delay without breaking existing setups.
+Tracks own module IDs to avoid destroying other apps' modules on cleanup.
 """
 
-import subprocess
 import re
 import time
-from typing import Optional, Tuple, List
+import threading
+from typing import Optional, Tuple
 from config import config
-
-
-def run_cmd(*args, capture: bool = False) -> str | bool:
-    """Run a shell command safely."""
-    try:
-        if capture:
-            result = subprocess.run(
-                list(args), 
-                capture_output=True, 
-                text=True, 
-                timeout=5
-            )
-            return result.stdout
-        subprocess.run(
-            list(args), 
-            check=True, 
-            stdout=subprocess.DEVNULL, 
-            stderr=subprocess.DEVNULL,
-            timeout=5
-        )
-        return True
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
-        return "" if capture else False
-
-
-def _find_loopback_module_ids() -> set[int]:
-    output = run_cmd('pactl', 'list', 'modules', capture=True)
-    if not output:
-        return set()
-    ids: set[int] = set()
-    for match in re.finditer(r'Module #(\d+)\s+Name: module-loopback', output):
-        ids.add(int(match.group(1)))
-    return ids
-
-
-def _list_movable_sink_inputs() -> List[str]:
-    """List sink inputs excluding internal loopbacks to keep sync stable."""
-    output = run_cmd('pactl', 'list', 'sink-inputs', capture=True)
-    if not output:
-        return []
-    loopback_modules = _find_loopback_module_ids()
-    inputs: List[str] = []
-    for block in output.split('Sink Input #')[1:]:
-        lines = block.strip().splitlines()
-        if not lines:
-            continue
-        input_id = lines[0].strip()
-        owner_module = None
-        driver = None
-        app_name = None
-        media_name = None
-        for line in lines:
-            stripped = line.strip()
-            if stripped.startswith('Owner Module:'):
-                owner_module = stripped.split(':', 1)[1].strip()
-            elif stripped.startswith('Driver:'):
-                driver = stripped.split(':', 1)[1].strip()
-            elif stripped.startswith('application.name ='):
-                app_name = stripped.split('=', 1)[1].strip().strip('"')
-            elif stripped.startswith('media.name ='):
-                media_name = stripped.split('=', 1)[1].strip().strip('"')
-        if owner_module and owner_module.isdigit() and int(owner_module) in loopback_modules:
-            continue
-        if driver and 'module-loopback' in driver:
-            continue
-        if app_name in ('module-loopback', 'module-ladspa-sink'):
-            continue
-        if media_name and 'Loopback' in media_name:
-            continue
-        inputs.append(input_id)
-    return inputs
+from pulse_utils import (
+    run_cmd, find_module_id, find_loopback_info,
+    find_bt_sink_by_description, list_movable_sink_inputs,
+    validate_sink_name, auto_detect_analog_sink, auto_detect_bt_sink,
+    get_bt_codec_info, suggest_jack_delay, is_pipewire,
+)
 
 
 class AudioState:
     """Current state of the audio system."""
-    
+
     def __init__(self):
         self.virtual_sink_exists: bool = False
         self.virtual_sink_module_id: Optional[int] = None
@@ -95,253 +31,315 @@ class AudioState:
         self.bt_loopback_module_id: Optional[int] = None
         self.bt_sink_name: Optional[str] = None
         self.bt_connected: bool = False
+        self.bt_codec: Optional[str] = None
+        self.bt_latency_ms: Optional[int] = None
         self.jack_sink_available: bool = False
         self.default_sink: Optional[str] = None
+        self.using_pipewire: bool = False
+        self.suggested_delay: Optional[int] = None
 
 
 class AudioBackend:
     """
-    Idempotent audio backend for PulseAudio.
+    Idempotent audio backend for PulseAudio/PipeWire.
     Only makes changes when necessary.
+    Tracks own module IDs for safe cleanup.
     """
-    
+
     def __init__(self):
-        self.virtual_sink = config.get("virtual_sink")
-        self.jack_sink = config.get("jack_sink")
-        self.jack_card = config.get("jack_card")
-        self.jack_port = config.get("jack_port")
-        self.bt_speaker_name = config.get("bt_speaker_name")
+        self._lock = threading.Lock()
+        self._reload_config()
         self._state = AudioState()
-    
+        # Track module IDs we created (for safe cleanup)
+        self._own_module_ids: set[int] = set()
+
+    def _reload_config(self):
+        """Reload sink names from config, auto-detecting if empty."""
+        self.virtual_sink = config.get("virtual_sink", "audio_master")
+        self.jack_sink = config.get("jack_sink", "")
+        self.jack_card = config.get("jack_card", "")
+        self.bt_speaker_name = config.get("bt_speaker_name", "")
+
+        # Auto-detect sinks if not configured
+        if not self.jack_sink:
+            detected = auto_detect_analog_sink()
+            if detected:
+                self.jack_sink = detected
+                config.set("jack_sink", detected)
+
+    def _ensure_analog_profile(self):
+        """Switch sound card to analog profile if jack sink requires it."""
+        if not self.jack_card or 'analog' not in self.jack_sink:
+            return
+        # Check if analog sink exists in current profile
+        sinks = run_cmd('pactl', 'list', 'sinks', 'short', capture=True)
+        if sinks and self.jack_sink in sinks:
+            return  # Already available
+        # Switch to analog duplex profile
+        run_cmd('pactl', 'set-card-profile', self.jack_card,
+                'output:analog-stereo+input:analog-stereo')
+        # Set headphones port if configured
+        jack_port = config.get("jack_port", "")
+        if jack_port:
+            import time as _t
+            _t.sleep(0.3)
+            run_cmd('pactl', 'set-sink-port', self.jack_sink, jack_port)
+
     def get_state(self) -> AudioState:
-        """Refresh and return current audio state."""
-        self._refresh_state()
-        return self._state
-    
+        """Refresh and return current audio state (thread-safe)."""
+        with self._lock:
+            self._refresh_state()
+            return self._state
+
     def _refresh_state(self):
-        """Query PulseAudio for current state."""
+        """Query PulseAudio/PipeWire for current state."""
         state = AudioState()
-        
+        state.using_pipewire = is_pipewire()
+
         # Check sinks
         sinks_output = run_cmd('pactl', 'list', 'sinks', 'short', capture=True)
         if sinks_output:
             state.virtual_sink_exists = self.virtual_sink in sinks_output
-            state.jack_sink_available = self.jack_sink in sinks_output
-            state.bt_sink_name = self._find_bt_sink()
+            state.jack_sink_available = bool(self.jack_sink) and self.jack_sink in sinks_output
+
+            # Find BT sink
+            if self.bt_speaker_name:
+                state.bt_sink_name = find_bt_sink_by_description(self.bt_speaker_name)
+            else:
+                state.bt_sink_name = auto_detect_bt_sink()
             state.bt_connected = state.bt_sink_name is not None
-        
+
+        # BT codec info
+        if state.bt_connected:
+            codec_info = get_bt_codec_info()
+            if codec_info:
+                state.bt_codec = codec_info.get('codec', 'SBC')
+                state.bt_latency_ms = codec_info.get('latency_ms', 0)
+                state.suggested_delay = suggest_jack_delay(state.bt_codec)
+
         # Check default sink
         info_output = run_cmd('pactl', 'info', capture=True)
         if info_output:
             match = re.search(r'Default Sink: (\S+)', info_output)
             if match:
                 state.default_sink = match.group(1)
-        
+
         # Check modules for loopbacks and virtual sink
         modules_output = run_cmd('pactl', 'list', 'modules', capture=True)
         if modules_output:
-            state.virtual_sink_module_id = self._find_module_id(
+            state.virtual_sink_module_id = find_module_id(
                 modules_output, 'module-null-sink', f'sink_name={self.virtual_sink}'
             )
             state.virtual_sink_exists = state.virtual_sink_module_id is not None
-            
+
             # Find jack loopback
-            jack_loop = self._find_loopback_info(modules_output, self.jack_sink)
-            if jack_loop:
-                state.jack_loopback_exists = True
-                state.jack_loopback_module_id = jack_loop[0]
-                state.jack_loopback_delay = jack_loop[1]
-            
+            if self.jack_sink:
+                jack_loop = find_loopback_info(
+                    modules_output, self.jack_sink, f'{self.virtual_sink}.monitor'
+                )
+                if jack_loop:
+                    state.jack_loopback_exists = True
+                    state.jack_loopback_module_id = jack_loop[0]
+                    state.jack_loopback_delay = jack_loop[1]
+
             # Find BT loopback
             if state.bt_sink_name:
-                bt_loop = self._find_loopback_info(modules_output, state.bt_sink_name)
+                bt_loop = find_loopback_info(
+                    modules_output, state.bt_sink_name, f'{self.virtual_sink}.monitor'
+                )
                 if bt_loop:
                     state.bt_loopback_exists = True
                     state.bt_loopback_module_id = bt_loop[0]
-        
+
         self._state = state
-    
-    def _find_bt_sink(self) -> Optional[str]:
-        """Find Bluetooth sink by speaker name."""
-        try:
-            output = run_cmd('pactl', 'list', 'sinks', capture=True)
-            for block in output.split('Sink #'):
-                if self.bt_speaker_name in block:
-                    match = re.search(r'Name: (bluez_sink\.\S+)', block)
-                    if match:
-                        return match.group(1)
-        except Exception:
-            pass
-        return None
-    
-    def _find_module_id(self, modules_output: str, module_name: str, arg_match: str) -> Optional[int]:
-        """Find module ID by name and argument."""
-        pattern = rf'Module #(\d+)\s+Name: {module_name}.*?Argument: ([^\n]+)'
-        for match in re.finditer(pattern, modules_output, re.DOTALL):
-            if arg_match in match.group(2):
-                return int(match.group(1))
-        return None
-    
-    def _find_loopback_info(self, modules_output: str, sink_name: str) -> Optional[Tuple[int, int]]:
-        """Find loopback module ID and latency for a sink."""
-        pattern = r'Module #(\d+)\s+Name: module-loopback.*?Argument: ([^\n]+)'
-        for match in re.finditer(pattern, modules_output, re.DOTALL):
-            args = match.group(2)
-            if f'sink={sink_name}' in args and f'source={self.virtual_sink}.monitor' in args:
-                latency_match = re.search(r'latency_msec=(\d+)', args)
-                latency = int(latency_match.group(1)) if latency_match else 10
-                return (int(match.group(1)), latency)
-        return None
-    
+
     def is_setup_complete(self) -> bool:
-        """Check if audio sync is fully configured."""
-        self._refresh_state()
-        return (
-            self._state.virtual_sink_exists and
-            self._state.jack_loopback_exists and
-            self._state.default_sink == self.virtual_sink
-        )
-    
+        with self._lock:
+            self._refresh_state()
+            return (
+                self._state.virtual_sink_exists and
+                self._state.jack_loopback_exists and
+                self._state.default_sink == self.virtual_sink
+            )
+
     def setup_sync(self, jack_delay_ms: Optional[int] = None) -> Tuple[bool, str]:
         """
         Idempotent setup of audio sync.
         Only creates/modifies what's missing or wrong.
         Returns (success, message).
         """
-        if jack_delay_ms is None:
-            jack_delay_ms = config.jack_delay
-        
-        self._refresh_state()
-        messages = []
-        
-        # 1. Create virtual sink if missing
-        if not self._state.virtual_sink_exists:
-            result = run_cmd(
-                'pactl', 'load-module', 'module-null-sink',
-                f'sink_name={self.virtual_sink}',
-                f'sink_properties=device.description="Audio_Master"'
-            )
-            if result:
-                messages.append("Created virtual master sink")
-                time.sleep(0.3)
-            else:
-                return (False, "Failed to create virtual sink")
-        
-        # 2. Set as default sink if not already
-        self._refresh_state()
-        if self._state.default_sink != self.virtual_sink:
-            run_cmd('pactl', 'set-default-sink', self.virtual_sink)
-            messages.append("Set audio_master as default")
-        
-        # 3. Create/update jack loopback
-        if not self._state.jack_loopback_exists:
-            run_cmd(
-                'pactl', 'load-module', 'module-loopback',
-                f'source={self.virtual_sink}.monitor',
-                f'sink={self.jack_sink}',
-                f'latency_msec={jack_delay_ms}'
-            )
-            messages.append(f"Created Jack loopback ({jack_delay_ms}ms)")
-        elif self._state.jack_loopback_delay != jack_delay_ms:
-            # Need to recreate with new delay
-            self._update_jack_delay(jack_delay_ms)
-            messages.append(f"Updated Jack delay to {jack_delay_ms}ms")
-        
-        # 4. Attach Bluetooth if connected
-        self._refresh_state()
-        if self._state.bt_connected and not self._state.bt_loopback_exists:
-            run_cmd('pactl', 'set-sink-mute', self._state.bt_sink_name, '0')
-            run_cmd('pactl', 'set-sink-volume', self._state.bt_sink_name, '100%')
-            run_cmd(
-                'pactl', 'load-module', 'module-loopback',
-                f'source={self.virtual_sink}.monitor',
-                f'sink={self._state.bt_sink_name}',
-                'latency_msec=1'
-            )
-            messages.append("Attached Bluetooth speaker")
-        
-        if not messages:
-            return (True, "Audio sync already configured correctly")
-        
-        # 5. Restore EQ routing if EQ was enabled
-        self._restore_eq_routing()
-        
-        return (True, "; ".join(messages))
-    
+        with self._lock:
+            self._reload_config()
+
+            if not self.jack_sink:
+                return (False, "No analog output sink found. Configure in Settings.")
+
+            if not validate_sink_name(self.jack_sink):
+                return (False, f"Invalid jack sink name: {self.jack_sink}")
+
+            if jack_delay_ms is None:
+                jack_delay_ms = config.jack_delay
+
+            # Ensure analog profile is active before checking sinks
+            self._ensure_analog_profile()
+
+            self._refresh_state()
+            messages = []
+
+            # 1. Create virtual sink if missing
+            if not self._state.virtual_sink_exists:
+                output = run_cmd(
+                    'pactl', 'load-module', 'module-null-sink',
+                    f'sink_name={self.virtual_sink}',
+                    'sink_properties=device.description="Audio_Master"',
+                    capture=True
+                )
+                if output and output.strip():
+                    try:
+                        mid = int(output.strip())
+                        self._own_module_ids.add(mid)
+                    except ValueError:
+                        pass
+                    messages.append("Created virtual master sink")
+                    time.sleep(0.3)
+                else:
+                    return (False, "Failed to create virtual sink")
+
+            # 2. Set as default sink
+            self._refresh_state()
+            if self._state.default_sink != self.virtual_sink:
+                run_cmd('pactl', 'set-default-sink', self.virtual_sink)
+                messages.append("Set audio_master as default")
+
+            # 3. Create/update jack loopback
+            if not self._state.jack_loopback_exists:
+                output = run_cmd(
+                    'pactl', 'load-module', 'module-loopback',
+                    f'source={self.virtual_sink}.monitor',
+                    f'sink={self.jack_sink}',
+                    f'latency_msec={jack_delay_ms}',
+                    capture=True
+                )
+                if output and output.strip():
+                    try:
+                        mid = int(output.strip())
+                        self._own_module_ids.add(mid)
+                    except ValueError:
+                        pass
+                messages.append(f"Created Jack loopback ({jack_delay_ms}ms)")
+            elif self._state.jack_loopback_delay != jack_delay_ms:
+                self._update_jack_delay(jack_delay_ms)
+                messages.append(f"Updated Jack delay to {jack_delay_ms}ms")
+
+            # 4. Attach Bluetooth if connected
+            self._refresh_state()
+            if self._state.bt_connected and not self._state.bt_loopback_exists:
+                run_cmd('pactl', 'set-sink-mute', self._state.bt_sink_name, '0')
+                run_cmd('pactl', 'set-sink-volume', self._state.bt_sink_name, '100%')
+                # BT loopback: use 10ms buffer to prevent PipeWire underruns
+                # (no perceptible delay, just enough for clean playback)
+                bt_buffer = 10 if self._state.using_pipewire else 5
+                output = run_cmd(
+                    'pactl', 'load-module', 'module-loopback',
+                    f'source={self.virtual_sink}.monitor',
+                    f'sink={self._state.bt_sink_name}',
+                    f'latency_msec={bt_buffer}',
+                    capture=True
+                )
+                if output and output.strip():
+                    try:
+                        mid = int(output.strip())
+                        self._own_module_ids.add(mid)
+                    except ValueError:
+                        pass
+                messages.append("Attached Bluetooth speaker")
+
+            if not messages:
+                return (True, "Audio sync already configured correctly")
+
+            # 5. Restore EQ routing if EQ was enabled
+            self._restore_eq_routing()
+
+            return (True, "; ".join(messages))
+
     def _restore_eq_routing(self):
         """If EQ is enabled, make sure audio routes through it."""
-        # Check if eq_sink exists
         sinks = run_cmd('pactl', 'list', 'sinks', 'short', capture=True)
-        if 'eq_sink' in sinks:
-            # EQ exists, set it as default and move streams
+        if sinks and 'eq_sink' in sinks:
             run_cmd('pactl', 'set-default-sink', 'eq_sink')
-            try:
-                for input_id in _list_movable_sink_inputs():
-                    run_cmd('pactl', 'move-sink-input', input_id, 'eq_sink')
-            except Exception:
-                pass
-    
+            for input_id in list_movable_sink_inputs():
+                run_cmd('pactl', 'move-sink-input', input_id, 'eq_sink')
+
     def _update_jack_delay(self, delay_ms: int):
         """Update jack loopback delay by recreating it."""
         self._refresh_state()
-        
-        # Remove old loopback
+
         if self._state.jack_loopback_module_id:
+            self._own_module_ids.discard(self._state.jack_loopback_module_id)
             run_cmd('pactl', 'unload-module', str(self._state.jack_loopback_module_id))
             time.sleep(0.1)
-        
-        # Create new with updated delay
-        run_cmd(
+
+        output = run_cmd(
             'pactl', 'load-module', 'module-loopback',
             f'source={self.virtual_sink}.monitor',
             f'sink={self.jack_sink}',
-            f'latency_msec={delay_ms}'
+            f'latency_msec={delay_ms}',
+            capture=True
         )
-    
+        if output and output.strip():
+            try:
+                mid = int(output.strip())
+                self._own_module_ids.add(mid)
+            except ValueError:
+                pass
+
     def set_jack_delay(self, delay_ms: int) -> bool:
         """Set Jack delay without full reset."""
         delay_ms = max(0, min(300, delay_ms))
         config.jack_delay = delay_ms
-        
-        self._refresh_state()
-        if self._state.jack_loopback_exists:
-            self._update_jack_delay(delay_ms)
-            return True
+
+        with self._lock:
+            self._refresh_state()
+            if self._state.jack_loopback_exists:
+                self._update_jack_delay(delay_ms)
+                return True
         return False
-    
+
     def get_jack_delay(self) -> int:
-        """Get current Jack delay."""
-        self._refresh_state()
-        if self._state.jack_loopback_delay is not None:
-            return self._state.jack_loopback_delay
+        with self._lock:
+            self._refresh_state()
+            if self._state.jack_loopback_delay is not None:
+                return self._state.jack_loopback_delay
         return config.jack_delay
-    
-    def get_bt_latency(self) -> Optional[int]:
-        """Get Bluetooth sink latency in ms."""
-        try:
-            output = run_cmd('pactl', 'list', 'sinks', capture=True)
-            for block in output.split('Sink #'):
-                if 'bluez_sink' in block:
-                    match = re.search(r'Latency:\s+(\d+)\s+usec', block)
-                    if match:
-                        return int(match.group(1)) // 1000
-        except Exception:
-            pass
-        return None
-    
+
     def cleanup(self):
-        """Remove all audio sync modules."""
-        run_cmd('pactl', 'unload-module', 'module-loopback')
-        run_cmd('pactl', 'unload-module', 'module-null-sink')
-        time.sleep(0.3)
-    
+        """Remove only modules created by this app."""
+        with self._lock:
+            # First try targeted cleanup using tracked IDs
+            for mid in list(self._own_module_ids):
+                run_cmd('pactl', 'unload-module', str(mid))
+            self._own_module_ids.clear()
+
+            # Also unload by matching our specific sink names
+            modules_output = run_cmd('pactl', 'list', 'modules', capture=True)
+            if modules_output:
+                # Unload our virtual sink
+                mid = find_module_id(modules_output, 'module-null-sink', f'sink_name={self.virtual_sink}')
+                if mid:
+                    run_cmd('pactl', 'unload-module', str(mid))
+
+                # Unload our loopbacks (ones using our monitor)
+                from pulse_utils import parse_module_blocks
+                for block in parse_module_blocks(modules_output):
+                    if block['name'] == 'module-loopback' and f'{self.virtual_sink}.monitor' in block['argument']:
+                        if block['id'] is not None:
+                            run_cmd('pactl', 'unload-module', str(block['id']))
+
+            time.sleep(0.3)
+
     def move_streams_to_master(self):
-        """Move app audio streams to virtual master."""
-        try:
-            for input_id in _list_movable_sink_inputs():
-                run_cmd('pactl', 'move-sink-input', input_id, self.virtual_sink)
-        except Exception:
-            pass
+        for input_id in list_movable_sink_inputs():
+            run_cmd('pactl', 'move-sink-input', input_id, self.virtual_sink)
 
 
 # Global backend instance

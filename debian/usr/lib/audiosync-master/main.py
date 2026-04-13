@@ -10,14 +10,16 @@ Features:
 - Adjustable Jack audio delay (default 115ms)
 - 10-band parametric EQ with presets
 - Dark glassmorphism UI
+- PipeWire and PulseAudio compatible
+- Auto-detects sinks and BT codec
 
 Requirements:
 - Python 3.10+
 - GTK4 and libadwaita
-- PulseAudio
+- PulseAudio or PipeWire (with pipewire-pulse)
 
 Install dependencies:
-    sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 pulseaudio-utils
+    sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 pulseaudio-utils swh-plugins
 
 Run:
     python3 main.py
@@ -29,7 +31,6 @@ gi.require_version('Adw', '1')
 from gi.repository import Gtk, Adw, GLib, Gio
 
 import sys
-import os
 import signal
 from pathlib import Path
 
@@ -46,60 +47,58 @@ Adw.init()
 
 class AudioSyncApp(Adw.Application):
     """Main application class."""
-    
+
     def __init__(self):
         super().__init__(
             application_id="com.audiosync.master",
             flags=Gio.ApplicationFlags.FLAGS_NONE
         )
-        
+
         self.window = None
-        
+
         # Handle SIGINT gracefully
         GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGINT, self._on_sigint)
-    
+
     def do_activate(self):
-        """Handle application activation."""
         if not self.window:
             self.window = MainWindow(self)
         self.window.present()
-    
+
     def do_startup(self):
-        """Handle application startup."""
         Adw.Application.do_startup(self)
-        
-        # Create app actions
+
         action = Gio.SimpleAction.new("quit", None)
         action.connect("activate", self._on_quit)
         self.add_action(action)
-        
+
         action = Gio.SimpleAction.new("about", None)
         action.connect("activate", self._on_about)
         self.add_action(action)
-        
-        # Set keyboard shortcuts
+
         self.set_accels_for_action("app.quit", ["<Control>q"])
-    
+
+    def do_shutdown(self):
+        """Clean up audio modules on exit."""
+        audio.cleanup()
+        Adw.Application.do_shutdown(self)
+
     def _on_quit(self, action, param):
-        """Handle quit action."""
         self.quit()
-    
+
     def _on_sigint(self):
-        """Handle Ctrl+C."""
         self.quit()
         return GLib.SOURCE_REMOVE
-    
+
     def _on_about(self, action, param):
-        """Show about dialog."""
         about = Adw.AboutWindow(
             transient_for=self.window,
             application_name="Audio Sync Master",
             application_icon="audio-speakers",
-            version="1.0.0",
-            developer_name="Audio Sync Team",
-            copyright="© 2026",
-            comments="Professional audio synchronization and equalization for Linux",
-            website="https://github.com/audiosync/master",
+            version="1.1.0",
+            developer_name="Andrei Dumitrescu",
+            copyright="\u00a9 2026",
+            comments="Professional audio synchronization and equalization for Linux.\nSupports PulseAudio and PipeWire.",
+            website="https://github.com/asdumitrescu/bluetooth-jack-audio-sync",
             license_type=Gtk.License.MIT_X11
         )
         about.present()
@@ -107,18 +106,17 @@ class AudioSyncApp(Adw.Application):
 
 def main():
     """Application entry point."""
-    # Check for required dependencies
+    # Check for pactl (works with both PulseAudio and PipeWire)
+    import subprocess
     try:
-        import subprocess
-        result = subprocess.run(['pactl', '--version'], capture_output=True)
+        result = subprocess.run(['pactl', '--version'], capture_output=True, timeout=5)
         if result.returncode != 0:
-            print("Error: PulseAudio (pactl) not found. Please install pulseaudio-utils.")
+            print("Error: pactl not found. Install pulseaudio-utils or pipewire-pulse.")
             sys.exit(1)
-    except FileNotFoundError:
-        print("Error: PulseAudio (pactl) not found. Please install pulseaudio-utils.")
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        print("Error: pactl not found. Install pulseaudio-utils or pipewire-pulse.")
         sys.exit(1)
-    
-    # Run the app
+
     app = AudioSyncApp()
     return app.run(sys.argv)
 

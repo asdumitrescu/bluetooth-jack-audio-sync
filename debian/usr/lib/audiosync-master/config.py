@@ -2,9 +2,12 @@
 """
 Configuration management for Audio Sync Master.
 Handles settings persistence in ~/.config/audiosync/
+Atomic writes to prevent data loss on crash.
 """
 
 import json
+import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -15,10 +18,10 @@ CONFIG_FILE = CONFIG_DIR / "settings.json"
 DEFAULTS = {
     "jack_delay_ms": 115,
     "bt_delay_ms": 1,
-    "jack_sink": "alsa_output.pci-0000_00_1f.3.analog-stereo",
-    "jack_card": "alsa_card.pci-0000_00_1f.3",
-    "jack_port": "analog-output-headphones",
-    "bt_speaker_name": "JBL PartyBox Encore 2",
+    "jack_sink": "",
+    "jack_card": "",
+    "jack_port": "",
+    "bt_speaker_name": "",
     "virtual_sink": "audio_master",
     "eq_enabled": False,
     "eq_bands": {
@@ -27,7 +30,8 @@ DEFAULTS = {
     },
     "eq_preset": "flat",
     "minimize_to_tray": True,
-    "autostart": False
+    "autostart": False,
+    "first_run": True
 }
 
 # EQ Presets
@@ -46,61 +50,66 @@ EQ_PRESETS = {
 
 
 class Config:
-    """Configuration manager with persistence."""
-    
+    """Configuration manager with atomic persistence."""
+
     def __init__(self):
         self._config: dict = {}
         self._load()
-    
+
     def _ensure_dir(self):
-        """Create config directory if it doesn't exist."""
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    
+
     def _load(self):
         """Load configuration from file, using defaults for missing values."""
         self._config = DEFAULTS.copy()
-        
+        self._config["eq_bands"] = DEFAULTS["eq_bands"].copy()
+
         if CONFIG_FILE.exists():
             try:
                 with open(CONFIG_FILE, 'r') as f:
                     saved = json.load(f)
-                    # Deep merge for nested dicts like eq_bands
-                    for key, value in saved.items():
-                        if isinstance(value, dict) and key in self._config:
-                            self._config[key] = {**self._config[key], **value}
-                        else:
-                            self._config[key] = value
+                for key, value in saved.items():
+                    if isinstance(value, dict) and key in self._config and isinstance(self._config[key], dict):
+                        self._config[key] = {**self._config[key], **value}
+                    else:
+                        self._config[key] = value
             except (json.JSONDecodeError, IOError):
-                pass  # Use defaults on error
-    
+                pass  # Use defaults on corrupt/missing file
+
     def save(self):
-        """Persist configuration to file."""
+        """Atomically persist configuration to file."""
         self._ensure_dir()
-        with open(CONFIG_FILE, 'w') as f:
-            json.dump(self._config, f, indent=2)
-    
+        # Write to temp file then atomic rename to prevent truncation on crash
+        try:
+            fd, tmp_path = tempfile.mkstemp(dir=CONFIG_DIR, suffix='.tmp', prefix='settings_')
+            with os.fdopen(fd, 'w') as f:
+                json.dump(self._config, f, indent=2)
+            os.replace(tmp_path, CONFIG_FILE)
+        except OSError:
+            # Fallback to direct write
+            try:
+                with open(CONFIG_FILE, 'w') as f:
+                    json.dump(self._config, f, indent=2)
+            except OSError:
+                pass
+
     def get(self, key: str, default: Any = None) -> Any:
-        """Get a configuration value."""
         return self._config.get(key, default)
-    
+
     def set(self, key: str, value: Any, save: bool = True):
-        """Set a configuration value."""
         self._config[key] = value
         if save:
             self.save()
-    
+
     def get_eq_bands(self) -> dict:
-        """Get current EQ band values."""
         return self._config.get("eq_bands", EQ_PRESETS["flat"]).copy()
-    
+
     def set_eq_bands(self, bands: dict, save: bool = True):
-        """Set EQ band values."""
         self._config["eq_bands"] = bands
         if save:
             self.save()
-    
+
     def apply_preset(self, preset_name: str, save: bool = True):
-        """Apply an EQ preset."""
         if preset_name in EQ_PRESETS:
             self._config["eq_bands"] = EQ_PRESETS[preset_name].copy()
             self._config["eq_preset"] = preset_name
@@ -108,14 +117,22 @@ class Config:
                 self.save()
             return True
         return False
-    
+
     @property
     def jack_delay(self) -> int:
         return self._config.get("jack_delay_ms", 115)
-    
+
     @jack_delay.setter
     def jack_delay(self, value: int):
         self._config["jack_delay_ms"] = max(0, min(300, value))
+        self.save()
+
+    @property
+    def is_first_run(self) -> bool:
+        return self._config.get("first_run", True)
+
+    def mark_first_run_done(self):
+        self._config["first_run"] = False
         self.save()
 
 
