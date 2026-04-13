@@ -53,6 +53,9 @@ class Equalizer:
         self._module_id: Optional[int] = None
         self._enabled = config.get("eq_enabled", False)
         self._bands = config.get_eq_bands()
+        # PipeWire needs longer settle time after module changes
+        from pulse_utils import is_pipewire
+        self._settle = 0.5 if is_pipewire() else 0.2
 
     def is_ladspa_available(self) -> bool:
         """Check if LADSPA mbeq plugin is available using pathlib (no subprocess)."""
@@ -101,9 +104,12 @@ class Equalizer:
             )
 
             if result:
+                import time
+                time.sleep(self._settle)
                 self._enabled = True
                 self._module_id = self._find_eq_module()
                 run_cmd('pactl', 'set-default-sink', self.sink_name)
+                time.sleep(0.1)
                 self._move_streams_to_eq()
                 config.set("eq_enabled", True)
                 return True
@@ -117,12 +123,15 @@ class Equalizer:
     def disable(self) -> bool:
         """Disable the equalizer."""
         with self._lock:
+            import time
             run_cmd('pactl', 'set-default-sink', self.master_sink)
+            time.sleep(0.1)
             self._move_streams_to_master()
 
             module_id = self._find_eq_module()
             if module_id:
                 run_cmd('pactl', 'unload-module', str(module_id))
+                time.sleep(self._settle)
 
             self._enabled = False
             self._module_id = None
@@ -159,6 +168,7 @@ class Equalizer:
 
     def _apply_bands(self) -> bool:
         """Apply current band values to the LADSPA sink."""
+        import time
         with self._lock:
             self._move_streams_to_master()
             run_cmd('pactl', 'set-default-sink', self.master_sink)
@@ -166,6 +176,7 @@ class Equalizer:
             module_id = self._find_eq_module()
             if module_id:
                 run_cmd('pactl', 'unload-module', str(module_id))
+                time.sleep(self._settle)
 
             controls = self._build_mbeq_controls()
             result = run_cmd(
@@ -178,8 +189,10 @@ class Equalizer:
             )
 
             if result:
+                time.sleep(self._settle)
                 self._module_id = self._find_eq_module()
                 run_cmd('pactl', 'set-default-sink', self.sink_name)
+                time.sleep(0.1)
                 self._move_streams_to_eq()
                 return True
 

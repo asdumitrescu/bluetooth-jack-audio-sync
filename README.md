@@ -15,8 +15,11 @@ A GTK4 Linux application for synchronizing JBL PartyBox Encore 2 (or any Bluetoo
 - 🎧 **Audio Sync**: Combine Bluetooth and Jack audio outputs into one unified output
 - ⏱️ **Delay Compensation**: Adjustable Jack delay (0-300ms, default 115ms) to sync with Bluetooth latency
 - 🎛️ **10-Band Parametric EQ**: Professional equalizer with presets (Bass, Rock, Jazz, etc.)
-- 🔄 **Idempotent**: Safe to restart - won't break your existing audio setup
+- 🔄 **Idempotent**: Safe to restart, refresh, close/reopen - won't break your audio setup
+- 🔊 **Volume Key Support**: FN volume keys mirror to all output sinks
+- 🔍 **Auto-Detection**: Detects sound card, analog sink, BT codec, and switches profiles automatically
 - 🎨 **Modern Dark UI**: Beautiful glassmorphism GTK4 interface
+- 🔧 **PipeWire + PulseAudio**: Works with both audio servers
 - 📦 **Easy Install**: `.deb` package included for one-click installation
 
 ---
@@ -150,10 +153,40 @@ sudo dpkg -i audiosync-master_1.0.0_all.deb
 
 ## 📋 Requirements
 
-- **OS**: Linux (tested on Ubuntu 22.04+)
+- **OS**: Linux (Ubuntu 22.04+ / Xubuntu / any GTK4-capable distro)
 - **Python**: 3.10+
-- **Audio**: PulseAudio
+- **Audio**: PipeWire (with pipewire-pulse) or PulseAudio
 - **Display**: X11 or Wayland (GTK4)
+
+---
+
+## 💻 Tested Hardware
+
+Developed and tested on:
+
+| Component | Details |
+|-----------|---------|
+| **Laptop** | Lenovo Legion Y520-15IKBN (80WK) |
+| **CPU** | Intel Core i7-7700HQ @ 2.80GHz |
+| **Audio Chip** | Intel CM238 HD Audio Controller [8086:a171] |
+| **OS** | Xubuntu 24.04 LTS (Noble Numbat) |
+| **Kernel** | 6.17.0 |
+| **Audio Server** | PipeWire 1.0.5 (PulseAudio compat) |
+| **BT Speaker** | JBL PartyBox Encore 2 (SBC codec) |
+
+### Compatible Laptops
+
+This app works on **any Linux laptop** with PipeWire or PulseAudio. The following laptops share the same Intel CM238 audio chipset and are known to be compatible:
+
+- **Lenovo Legion Y520** (all variants: 15IKBN, 15IKBM)
+- **Lenovo ThinkPad P51 / P51s**
+- **HP Pavilion Power 15-cb0xx**
+- **MSI GE/GP/GL series** (7th gen Intel, e.g. GE63VR, GP62MVR)
+- **Dell Inspiron 7577 / 7567** (Gaming series)
+- **ASUS ROG GL553 / GL753** (7th gen)
+- **Acer Predator Helios 300** (G3-571/572)
+
+Any laptop with a 7th-gen Intel CPU (Kaby Lake) using the HM175/QM175/CM238 chipset will have the same audio controller. Laptops with other Intel HD Audio controllers (Realtek ALC-based) also work since the app uses PulseAudio/PipeWire abstractions, not direct ALSA.
 
 ---
 

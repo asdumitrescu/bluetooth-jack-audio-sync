@@ -5,7 +5,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-VERSION="1.1.0"
+VERSION="1.2.0"
 PACKAGE_NAME="audiosync-master"
 BUILD_DIR="$SCRIPT_DIR/debian"
 LIB_DIR="$BUILD_DIR/usr/lib/$PACKAGE_NAME"
